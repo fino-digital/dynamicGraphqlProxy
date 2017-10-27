@@ -1,7 +1,7 @@
 package dynamicGraphqlProxy
 
 import (
-	"log"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -35,19 +35,23 @@ func (proxy *Proxy) Handle(context echo.Context) error {
 
 	// find productConfig
 	if productConfig, ok := proxy.config.ProductConfigs[confHost]; ok {
-		schema, err := productConfig.BuildSchema(context)
-		if err != nil {
-			context.JSON(http.StatusInternalServerError, "Can't build schema. Please contact Backend-Devs.")
+		if err := serveProductConfig(context, productConfig); err != nil {
+			context.JSON(http.StatusInternalServerError, err)
 		}
-		handler.New(&handler.Config{
-			Schema:   schema,
-			Pretty:   true,
-			GraphiQL: true,
-		}).ServeHTTP(context.Response(), context.Request())
-		return nil
 	}
-	log.Println("No schema existing for " + confHost)
 	return context.JSON(http.StatusBadGateway, "No schema existing for "+confHost)
+}
+
+// HandleLocalhost handle a localhost call for your tests
+func (proxy *Proxy) HandleLocalhost(host string) func(echo.Context) error {
+	return func(context echo.Context) error {
+		if productConfig, ok := proxy.config.ProductConfigs[host]; ok {
+			if err := serveProductConfig(context, productConfig); err != nil {
+				context.JSON(http.StatusInternalServerError, err)
+			}
+		}
+		return context.JSON(http.StatusBadGateway, "No schema existing for "+host)
+	}
 }
 
 func (proxy *Proxy) checkIfAllSchemataBuildable() {
@@ -59,6 +63,19 @@ func (proxy *Proxy) checkIfAllSchemataBuildable() {
 			panic("[" + host + "]" + " build error: " + err.Error())
 		}
 	}
+}
+
+func serveProductConfig(context echo.Context, productConfig ProductConfig) error {
+	schema, err := productConfig.BuildSchema(context)
+	if err != nil {
+		return errors.New("Can't build schema. Please contact Backend-Devs")
+	}
+	handler.New(&handler.Config{
+		Schema:   schema,
+		Pretty:   true,
+		GraphiQL: true,
+	}).ServeHTTP(context.Response(), context.Request())
+	return nil
 }
 
 // Config holds all configs

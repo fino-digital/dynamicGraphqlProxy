@@ -57,6 +57,12 @@ func TestProductConfig(t *testing.T) {
 		Host:         "myProduct-stageA.example.com",
 		Stage:        "C",
 		ResponseCode: http.StatusBadRequest,
+	}, {
+		Host:         "localhost:8080/localhost",
+		ResponseCode: http.StatusOK,
+	}, {
+		Host:         "myProduct-stageA.example.com",
+		ResponseCode: http.StatusBadGateway,
 	}}
 
 	for testIndex, test := range testData {
@@ -67,6 +73,7 @@ func TestProductConfig(t *testing.T) {
 		request := httptest.NewRequest(echo.GET, "http://"+test.Host+"/graphql", strings.NewReader(testutil.IntrospectionQuery))
 		rec := httptest.NewRecorder()
 		router.Any("/graphql", proxy.Handle)
+		router.Any("/localhost/graphql", proxy.HandleLocalhost("myProduct<stage>.example.com"))
 
 		// TEST
 		router.ServeHTTP(rec, request)
