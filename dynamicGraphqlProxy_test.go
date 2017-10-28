@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/fino-digital/dynamicGraphqlProxy"
+	"github.com/TobiEiss/dynamicGraphqlProxy"
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/graphql/testutil"
 	"github.com/labstack/echo"
@@ -80,5 +80,66 @@ func TestProductConfig(t *testing.T) {
 		if rec.Result().StatusCode != test.ResponseCode {
 			t.Errorf("[%d] current:%d expected:%d; body:%s", testIndex, rec.Result().StatusCode, test.ResponseCode, rec.Body.String())
 		}
+	}
+}
+
+func TestModules(t *testing.T) {
+	type CContext struct {
+		echo.Context
+		Collector *[]string
+	}
+	collector := &[]string{}
+
+	config := dynamicGraphqlProxy.Config{
+		ProductConfigs: map[string]dynamicGraphqlProxy.ProductConfig{
+			"myProduct.example.com": dynamicGraphqlProxy.ProductConfig{
+				BuildSchema: buildTestSchema,
+				MiddlewareModules: []echo.MiddlewareFunc{
+					func(next echo.HandlerFunc) echo.HandlerFunc {
+						return func(c echo.Context) error {
+							ccontext := c.(*CContext)
+							(*ccontext.Collector) = append((*ccontext.Collector), "A")
+							return next(c)
+						}
+					},
+					func(next echo.HandlerFunc) echo.HandlerFunc {
+						return func(c echo.Context) error {
+							ccontext := c.(*CContext)
+							(*ccontext.Collector) = append((*ccontext.Collector), "B")
+							return next(c)
+						}
+					},
+					func(next echo.HandlerFunc) echo.HandlerFunc {
+						return func(c echo.Context) error {
+							ccontext := c.(*CContext)
+							(*ccontext.Collector) = append((*ccontext.Collector), "C")
+							return next(c)
+						}
+					},
+				},
+			},
+		},
+	}
+	proxy := dynamicGraphqlProxy.NewProxy(config)
+
+	// build request
+	router := echo.New()
+	router.Use(func(h echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			return h(&CContext{Context: c, Collector: collector})
+		}
+	})
+	request := httptest.NewRequest(echo.GET, "http://myProduct.example.com/graphql", strings.NewReader(testutil.IntrospectionQuery))
+	rec := httptest.NewRecorder()
+	router.Any("/graphql", proxy.Handle)
+
+	// TEST
+	router.ServeHTTP(rec, request)
+	if rec.Result().StatusCode != http.StatusOK {
+		t.Errorf("current:%d expected:%d; body:%s", rec.Result().StatusCode, http.StatusOK, rec.Body.String())
+	}
+
+	if len(*collector) < 3 {
+		t.Fail()
 	}
 }

@@ -27,19 +27,32 @@ func NewProxy(config Config) *Proxy {
 // Handle is for the echo-router
 func (proxy *Proxy) Handle(context echo.Context) error {
 	host := context.Request().Host
-	stage := proxy.config.StageConfig.FindCurrentStage(context)
-	if _, ok := proxy.config.StageConfig.Stages[stage]; !ok {
-		return context.JSON(http.StatusBadRequest, "Stage "+stage+" not existing")
+	if proxy.config.StageConfig.StageKeyWord != "" {
+		stage := proxy.config.StageConfig.FindCurrentStage(context)
+		if _, ok := proxy.config.StageConfig.Stages[stage]; !ok {
+			return context.JSON(http.StatusBadRequest, "Stage "+stage+" not existing")
+		}
+		host = strings.Replace(host, proxy.config.StageConfig.Stages[stage], proxy.config.StageConfig.StageKeyWord, 1)
 	}
-	confHost := strings.Replace(host, proxy.config.StageConfig.Stages[stage], proxy.config.StageConfig.StageKeyWord, 1)
 
 	// find productConfig
-	if productConfig, ok := proxy.config.ProductConfigs[confHost]; ok {
-		if err := serveProductConfig(context, productConfig); err != nil {
-			context.JSON(http.StatusInternalServerError, err)
+	if productConfig, ok := proxy.config.ProductConfigs[host]; ok {
+		var handler echo.HandlerFunc
+		handler = func(c echo.Context) error {
+			// serve product
+			if err := serveProductConfig(context, productConfig); err != nil {
+				return context.JSON(http.StatusInternalServerError, err)
+			}
+			return nil
 		}
+		// Chain middleware
+		for i := len(productConfig.MiddlewareModules) - 1; i >= 0; i-- {
+			handler = productConfig.MiddlewareModules[i](handler)
+		}
+		return handler(context)
+
 	}
-	return context.JSON(http.StatusBadGateway, "No schema existing for "+confHost)
+	return context.JSON(http.StatusBadGateway, "No schema existing for "+host)
 }
 
 // HandleLocalhost handle a localhost call for your tests
@@ -86,24 +99,11 @@ type Config struct {
 
 // ProductConfig describes a product
 type ProductConfig struct {
-	BuildSchema func(context echo.Context) (*graphql.Schema, error)
+	MiddlewareModules []echo.MiddlewareFunc
+	BuildSchema       func(context echo.Context) (*graphql.Schema, error)
 }
 
 // StageConfig is necessary if you need stages
-/*
-For example you have following stages:
-myProduct-stageA.example.com
-myProduct-stageB.example.com
-
-Then is the following config correct:
-dynamicGraphqlProxy.StageConfig{
-	StageKeyWord: "<stage>",
-	Stages:       map[string]string{"A": "-stageA", "B": "-stageB"},
-	FindCurrentStage: func(context echo.Context) string {
-		return os.Getenv("stage")
-	},
-}
-*/
 type StageConfig struct {
 	StageKeyWord     string
 	Stages           map[string]string
