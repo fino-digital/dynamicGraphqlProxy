@@ -84,11 +84,7 @@ func TestProductConfig(t *testing.T) {
 }
 
 func TestModules(t *testing.T) {
-	type CContext struct {
-		echo.Context
-		Collector *[]string
-	}
-	collector := &[]string{}
+	collector := []string{}
 
 	config := dynamicGraphqlProxy.Config{
 		ProductConfigs: map[string]dynamicGraphqlProxy.ProductConfig{
@@ -97,22 +93,19 @@ func TestModules(t *testing.T) {
 				MiddlewareModules: []echo.MiddlewareFunc{
 					func(next echo.HandlerFunc) echo.HandlerFunc {
 						return func(c echo.Context) error {
-							ccontext := c.(*CContext)
-							(*ccontext.Collector) = append((*ccontext.Collector), "A")
+							collector = append(collector, "A")
 							return next(c)
 						}
 					},
 					func(next echo.HandlerFunc) echo.HandlerFunc {
 						return func(c echo.Context) error {
-							ccontext := c.(*CContext)
-							(*ccontext.Collector) = append((*ccontext.Collector), "B")
+							collector = append(collector, "B")
 							return next(c)
 						}
 					},
 					func(next echo.HandlerFunc) echo.HandlerFunc {
 						return func(c echo.Context) error {
-							ccontext := c.(*CContext)
-							(*ccontext.Collector) = append((*ccontext.Collector), "C")
+							collector = append(collector, "C")
 							return next(c)
 						}
 					},
@@ -124,11 +117,6 @@ func TestModules(t *testing.T) {
 
 	// build request
 	router := echo.New()
-	router.Use(func(h echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
-			return h(&CContext{Context: c, Collector: collector})
-		}
-	})
 	request := httptest.NewRequest(echo.GET, "http://myProduct.example.com/graphql", strings.NewReader(testutil.IntrospectionQuery))
 	rec := httptest.NewRecorder()
 	router.Any("/graphql", proxy.Handle)
@@ -139,7 +127,7 @@ func TestModules(t *testing.T) {
 		t.Errorf("current:%d expected:%d; body:%s", rec.Result().StatusCode, http.StatusOK, rec.Body.String())
 	}
 
-	if len(*collector) < 3 {
+	if len(collector) < 3 {
 		t.Fail()
 	}
 }
