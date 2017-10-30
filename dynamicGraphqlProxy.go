@@ -4,8 +4,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/TobiEiss/schemaToRest"
-
 	"github.com/graphql-go/graphql"
 
 	"github.com/labstack/echo"
@@ -26,7 +24,7 @@ func NewProxy() *Proxy {
 
 // UseProxy is the start-methode
 func (proxy *Proxy) UseProxy(config Config) {
-	proxy.Any("/:"+ProxyParamType+"/:"+schemaToRest.FunctionParamKey, func(context echo.Context) error {
+	proxy.Any("/:"+ProxyParamType+"/*", func(context echo.Context) error {
 		host := context.Request().Host
 		if config.StageConfig.StageKeyWord != "" {
 			stage := config.StageConfig.FindCurrentStage(context)
@@ -61,7 +59,7 @@ func (proxy *Proxy) UseProxy(config Config) {
 
 // UseProxyWithLocalhost handle a localhost call for your tests
 func (proxy *Proxy) UseProxyWithLocalhost(config Config, productHost string) {
-	proxy.Any("/local/:"+ProxyParamType+"/:"+schemaToRest.FunctionParamKey, func(context echo.Context) error {
+	proxy.Any("/local/:"+ProxyParamType+"/*", func(context echo.Context) error {
 		if productConfig, ok := config.ProductConfigs[productHost]; ok {
 			route := context.Param(ProxyParamType)
 			if delination, okD := productConfig.Delinations[route]; okD {
