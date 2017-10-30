@@ -1,6 +1,7 @@
 package dynamicGraphqlProxy_test
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,13 +14,16 @@ import (
 	"github.com/labstack/echo"
 )
 
-func buildTestSchema(context echo.Context) (*graphql.Schema, error) {
+func buildTestSchema() (*graphql.Schema, error) {
 	schema, err := graphql.NewSchema(graphql.SchemaConfig{
 		Query: graphql.NewObject(graphql.ObjectConfig{
 			Name: "testQuery",
 			Fields: graphql.Fields{
 				"testField": &graphql.Field{
 					Type: graphql.String,
+					Resolve: func(param graphql.ResolveParams) (interface{}, error) {
+						return "Hello", errors.New("Error")
+					},
 				},
 			},
 		}),
@@ -28,10 +32,19 @@ func buildTestSchema(context echo.Context) (*graphql.Schema, error) {
 }
 
 func TestProductConfig(t *testing.T) {
+	schema, err := buildTestSchema()
+	if err != nil {
+		panic(err)
+	}
 	config := dynamicGraphqlProxy.Config{
 		ProductConfigs: map[string]dynamicGraphqlProxy.ProductConfig{
 			"myProduct<stage>.example.com": dynamicGraphqlProxy.ProductConfig{
-				BuildSchema: buildTestSchema,
+				Delinations: map[string]dynamicGraphqlProxy.Delineation{
+					"graphql": dynamicGraphqlProxy.Delineation{
+						Schema:          schema,
+						DelineationType: dynamicGraphqlProxy.Graphql,
+					},
+				},
 			},
 		},
 		StageConfig: dynamicGraphqlProxy.StageConfig{
@@ -43,25 +56,32 @@ func TestProductConfig(t *testing.T) {
 		},
 	}
 
-	proxy := dynamicGraphqlProxy.NewProxy(config)
+	proxy := dynamicGraphqlProxy.NewProxy()
+	proxy.UseProxy(config)
+	proxy.UseProxyWithLocalhost(config, "myProduct<stage>.example.com")
 
 	testData := []struct {
 		Host         string
+		Route        string
 		ResponseCode int
 		Stage        string
 	}{{
 		Host:         "myProduct-stageA.example.com",
+		Route:        "/graphql",
 		Stage:        "A",
 		ResponseCode: http.StatusOK,
 	}, {
 		Host:         "myProduct-stageA.example.com",
+		Route:        "/graphql",
 		Stage:        "C",
 		ResponseCode: http.StatusBadRequest,
 	}, {
-		Host:         "localhost:8080/localhost",
+		Host:         "localhost:8080/local",
+		Route:        "/graphql",
 		ResponseCode: http.StatusOK,
 	}, {
 		Host:         "myProduct-stageA.example.com",
+		Route:        "/graphql",
 		ResponseCode: http.StatusBadGateway,
 	}}
 
@@ -69,14 +89,11 @@ func TestProductConfig(t *testing.T) {
 		os.Setenv("stage", test.Stage)
 
 		// build request
-		router := echo.New()
-		request := httptest.NewRequest(echo.GET, "http://"+test.Host+"/graphql", strings.NewReader(testutil.IntrospectionQuery))
+		request := httptest.NewRequest(echo.GET, "http://"+test.Host+test.Route, strings.NewReader(testutil.IntrospectionQuery))
 		rec := httptest.NewRecorder()
-		router.Any("/graphql", proxy.Handle)
-		router.Any("/localhost/graphql", proxy.HandleLocalhost("myProduct<stage>.example.com"))
 
 		// TEST
-		router.ServeHTTP(rec, request)
+		proxy.ServeHTTP(rec, request)
 		if rec.Result().StatusCode != test.ResponseCode {
 			t.Errorf("[%d] current:%d expected:%d; body:%s", testIndex, rec.Result().StatusCode, test.ResponseCode, rec.Body.String())
 		}
@@ -85,44 +102,49 @@ func TestProductConfig(t *testing.T) {
 
 func TestModules(t *testing.T) {
 	collector := []string{}
+	schema, _ := buildTestSchema()
 
 	config := dynamicGraphqlProxy.Config{
 		ProductConfigs: map[string]dynamicGraphqlProxy.ProductConfig{
 			"myProduct.example.com": dynamicGraphqlProxy.ProductConfig{
-				BuildSchema: buildTestSchema,
-				MiddlewareModules: []echo.MiddlewareFunc{
-					func(next echo.HandlerFunc) echo.HandlerFunc {
-						return func(c echo.Context) error {
-							collector = append(collector, "A")
-							return next(c)
-						}
-					},
-					func(next echo.HandlerFunc) echo.HandlerFunc {
-						return func(c echo.Context) error {
-							collector = append(collector, "B")
-							return next(c)
-						}
-					},
-					func(next echo.HandlerFunc) echo.HandlerFunc {
-						return func(c echo.Context) error {
-							collector = append(collector, "C")
-							return next(c)
-						}
+				Delinations: map[string]dynamicGraphqlProxy.Delineation{
+					"graphql": dynamicGraphqlProxy.Delineation{
+						Schema:          schema,
+						DelineationType: dynamicGraphqlProxy.Graphql,
+						MiddlewareModules: []echo.MiddlewareFunc{
+							func(next echo.HandlerFunc) echo.HandlerFunc {
+								return func(c echo.Context) error {
+									collector = append(collector, "A")
+									return next(c)
+								}
+							},
+							func(next echo.HandlerFunc) echo.HandlerFunc {
+								return func(c echo.Context) error {
+									collector = append(collector, "B")
+									return next(c)
+								}
+							},
+							func(next echo.HandlerFunc) echo.HandlerFunc {
+								return func(c echo.Context) error {
+									collector = append(collector, "C")
+									return next(c)
+								}
+							},
+						},
 					},
 				},
 			},
 		},
 	}
-	proxy := dynamicGraphqlProxy.NewProxy(config)
+	proxy := dynamicGraphqlProxy.NewProxy()
+	proxy.UseProxy(config)
 
 	// build request
-	router := echo.New()
 	request := httptest.NewRequest(echo.GET, "http://myProduct.example.com/graphql", strings.NewReader(testutil.IntrospectionQuery))
 	rec := httptest.NewRecorder()
-	router.Any("/graphql", proxy.Handle)
+	proxy.ServeHTTP(rec, request)
 
 	// TEST
-	router.ServeHTTP(rec, request)
 	if rec.Result().StatusCode != http.StatusOK {
 		t.Errorf("current:%d expected:%d; body:%s", rec.Result().StatusCode, http.StatusOK, rec.Body.String())
 	}
