@@ -4,7 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"os"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -31,6 +31,40 @@ func buildTestSchema() (*graphql.Schema, error) {
 	return &schema, err
 }
 
+func TestHostRegex(t *testing.T) {
+	var validHost = regexp.MustCompile(`^(dev\.|test\.)?example\.com$`)
+
+	testData := map[string]bool{
+		"dev.example.com":     true,
+		"test.example.com":    true,
+		"example.com":         true,
+		"testing.example.com": false,
+	}
+
+	for host, shouldMatch := range testData {
+		if validHost.MatchString(host) != shouldMatch {
+			t.Fail()
+		}
+	}
+}
+
+func TestHostRegex2(t *testing.T) {
+	var validHost = regexp.MustCompile(`^myproduct(-stageA|-stageB)?\.example\.com$`)
+
+	testData := map[string]bool{
+		"myproduct-stageA.example.com": true,
+		"myproduct-stageB.example.com": true,
+		"myproduct.example.com":        true,
+		"testing.example.com":          false,
+	}
+
+	for host, shouldMatch := range testData {
+		if validHost.MatchString(host) != shouldMatch {
+			t.Errorf("following failed: %s", host)
+		}
+	}
+}
+
 func TestProductConfig(t *testing.T) {
 	schema, err := buildTestSchema()
 	if err != nil {
@@ -38,7 +72,7 @@ func TestProductConfig(t *testing.T) {
 	}
 	config := dynamicGraphqlProxy.Config{
 		ProductConfigs: map[string]dynamicGraphqlProxy.ProductConfig{
-			"myProduct<stage>.example.com": dynamicGraphqlProxy.ProductConfig{
+			`^myproduct(-stageA|-stageB)?\.example\.com$`: dynamicGraphqlProxy.ProductConfig{
 				Delinations: map[string]dynamicGraphqlProxy.Delineation{
 					"graphql": dynamicGraphqlProxy.Delineation{
 						Schema:          schema,
@@ -47,18 +81,11 @@ func TestProductConfig(t *testing.T) {
 				},
 			},
 		},
-		StageConfig: dynamicGraphqlProxy.StageConfig{
-			StageKeyWord: "<stage>",
-			Stages:       map[string]string{"A": "-stageA", "B": "-stageB", "": ""},
-			FindCurrentStage: func(context echo.Context) string {
-				return os.Getenv("stage")
-			},
-		},
 	}
 
 	proxy := dynamicGraphqlProxy.NewProxy()
 	proxy.UseProxy(config)
-	proxy.UseProxyWithLocalhost(config, "myProduct<stage>.example.com")
+	proxy.UseProxyWithLocalhost(config, "myproduct.example.com")
 
 	testData := []struct {
 		Host         string
@@ -66,30 +93,31 @@ func TestProductConfig(t *testing.T) {
 		ResponseCode int
 		Stage        string
 	}{{
-		Host:         "myProduct-stageA.example.com",
-		Route:        "/graphql",
-		Stage:        "A",
+		Host:         "myproduct-stageA.example.com",
+		Route:        "/graphql/",
 		ResponseCode: http.StatusOK,
 	}, {
-		Host:         "myProduct-stageA.example.com",
-		Route:        "/graphql",
-		Stage:        "C",
-		ResponseCode: http.StatusBadRequest,
+		Host:         "myproduct-stageB.example.com",
+		Route:        "/graphql/",
+		ResponseCode: http.StatusOK,
 	}, {
 		Host:         "localhost:8080/local",
-		Route:        "/graphql",
+		Route:        "/graphql/",
 		ResponseCode: http.StatusOK,
 	}, {
-		Host:         "myProduct-stageA.example.com",
-		Route:        "/graphql",
+		Host:         "myproduct.example.com",
+		Route:        "/graphql/",
+		ResponseCode: http.StatusOK,
+	}, {
+		Host:         "myproduct-wrongstage.example.com",
+		Route:        "/graphql/",
 		ResponseCode: http.StatusBadGateway,
 	}}
 
 	for testIndex, test := range testData {
-		os.Setenv("stage", test.Stage)
-
 		// build request
-		request := httptest.NewRequest(echo.GET, "http://"+test.Host+test.Route, strings.NewReader(testutil.IntrospectionQuery))
+		target := "http://" + test.Host + test.Route
+		request := httptest.NewRequest(echo.POST, target, strings.NewReader(testutil.IntrospectionQuery))
 		rec := httptest.NewRecorder()
 
 		// TEST
@@ -140,7 +168,7 @@ func TestModules(t *testing.T) {
 	proxy.UseProxy(config)
 
 	// build request
-	request := httptest.NewRequest(echo.GET, "http://myProduct.example.com/graphql", strings.NewReader(testutil.IntrospectionQuery))
+	request := httptest.NewRequest(echo.POST, "http://myProduct.example.com/graphql/", strings.NewReader(testutil.IntrospectionQuery))
 	rec := httptest.NewRecorder()
 	proxy.ServeHTTP(rec, request)
 

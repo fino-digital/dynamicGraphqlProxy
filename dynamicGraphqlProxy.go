@@ -2,7 +2,7 @@ package dynamicGraphqlProxy
 
 import (
 	"net/http"
-	"strings"
+	"regexp"
 
 	"github.com/graphql-go/graphql"
 
@@ -26,32 +26,27 @@ func NewProxy() *Proxy {
 func (proxy *Proxy) UseProxy(config Config) {
 	proxy.Any("/:"+ProxyParamType+"/*", func(context echo.Context) error {
 		host := context.Request().Host
-		if config.StageConfig.StageKeyWord != "" {
-			stage := config.StageConfig.FindCurrentStage(context)
-			if _, ok := config.StageConfig.Stages[stage]; !ok {
-				return context.JSON(http.StatusBadRequest, "Stage "+stage+" not existing")
-			}
-			host = strings.Replace(host, config.StageConfig.Stages[stage], config.StageConfig.StageKeyWord, 1)
-		}
 		// find productConfig
-		if productConfig, ok := config.ProductConfigs[host]; ok {
-			route := context.Param(ProxyParamType)
-			if delination, okD := productConfig.Delinations[route]; okD {
-				var handler echo.HandlerFunc
-				handler = func(c echo.Context) error {
-					// serve product
-					if err := wrapSchema(delination)(context); err != nil {
-						return context.JSON(http.StatusInternalServerError, err)
+		for hostRegex, productConfig := range config.ProductConfigs {
+			if regexp.MustCompile(hostRegex).MatchString(host) {
+				route := context.Param(ProxyParamType)
+				if delination, okD := productConfig.Delinations[route]; okD {
+					var handler echo.HandlerFunc
+					handler = func(c echo.Context) error {
+						// serve product
+						if err := wrapSchema(delination)(context); err != nil {
+							return context.JSON(http.StatusInternalServerError, err)
+						}
+						return nil
 					}
-					return nil
+					// Chain middleware
+					for i := len(delination.MiddlewareModules) - 1; i >= 0; i-- {
+						handler = delination.MiddlewareModules[i](handler)
+					}
+					return handler(context)
 				}
-				// Chain middleware
-				for i := len(delination.MiddlewareModules) - 1; i >= 0; i-- {
-					handler = delination.MiddlewareModules[i](handler)
-				}
-				return handler(context)
+				return context.JSON(http.StatusBadGateway, "No route existing for "+route)
 			}
-			return context.JSON(http.StatusBadGateway, "No route existing for "+route)
 		}
 		return context.JSON(http.StatusBadGateway, "No schema existing for "+host)
 	})
@@ -60,16 +55,18 @@ func (proxy *Proxy) UseProxy(config Config) {
 // UseProxyWithLocalhost handle a localhost call for your tests
 func (proxy *Proxy) UseProxyWithLocalhost(config Config, productHost string) {
 	proxy.Any("/local/:"+ProxyParamType+"/*", func(context echo.Context) error {
-		if productConfig, ok := config.ProductConfigs[productHost]; ok {
-			route := context.Param(ProxyParamType)
-			if delination, okD := productConfig.Delinations[route]; okD {
-				// serve product
-				if err := wrapSchema(delination)(context); err != nil {
-					return context.JSON(http.StatusInternalServerError, err)
+		for hostRegex, productConfig := range config.ProductConfigs {
+			if regexp.MustCompile(hostRegex).MatchString(productHost) {
+				route := context.Param(ProxyParamType)
+				if delination, okD := productConfig.Delinations[route]; okD {
+					// serve product
+					if err := wrapSchema(delination)(context); err != nil {
+						return context.JSON(http.StatusInternalServerError, err)
+					}
+					return nil
 				}
-				return nil
+				return context.JSON(http.StatusBadGateway, "No route existing for "+route)
 			}
-			return context.JSON(http.StatusBadGateway, "No route existing for "+route)
 		}
 		return context.JSON(http.StatusBadGateway, "No schema existing for "+productHost)
 	})
@@ -77,7 +74,6 @@ func (proxy *Proxy) UseProxyWithLocalhost(config Config, productHost string) {
 
 // Config holds all configs
 type Config struct {
-	StageConfig    StageConfig
 	ProductConfigs map[string]ProductConfig
 }
 
@@ -85,13 +81,6 @@ type Config struct {
 type ProductConfig struct {
 	// Delinations is route -> Delination
 	Delinations map[string]Delineation
-}
-
-// StageConfig is necessary if you need stages
-type StageConfig struct {
-	StageKeyWord     string
-	Stages           map[string]string
-	FindCurrentStage func(context echo.Context) string
 }
 
 // DelineationType is the type of the delination. Use the const-enums
