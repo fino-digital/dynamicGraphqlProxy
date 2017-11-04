@@ -39,7 +39,11 @@ func (proxy *Proxy) UseProxy(config Config) {
 						}
 						return nil
 					}
-					// Chain middleware
+					// Chain config-middlewares
+					for i := len(config.MiddlewareModules) - 1; i >= 0; i-- {
+						handler = config.MiddlewareModules[i](handler)
+					}
+					// Chain product middleware
 					for i := len(delination.MiddlewareModules) - 1; i >= 0; i-- {
 						handler = delination.MiddlewareModules[i](handler)
 					}
@@ -74,7 +78,8 @@ func (proxy *Proxy) UseProxyWithLocalhost(config Config, productHost string) {
 
 // Config holds all configs
 type Config struct {
-	ProductConfigs map[string]ProductConfig
+	ProductConfigs    map[string]ProductConfig
+	MiddlewareModules []echo.MiddlewareFunc
 }
 
 // ProductConfig describes a product

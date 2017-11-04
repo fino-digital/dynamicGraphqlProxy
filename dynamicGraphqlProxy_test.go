@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/fino-digital/dynamicGraphqlProxy"
+	"github.com/TobiEiss/dynamicGraphqlProxy"
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/graphql/testutil"
 	"github.com/labstack/echo"
@@ -133,6 +133,14 @@ func TestModules(t *testing.T) {
 	schema, _ := buildTestSchema()
 
 	config := dynamicGraphqlProxy.Config{
+		MiddlewareModules: []echo.MiddlewareFunc{
+			func(next echo.HandlerFunc) echo.HandlerFunc {
+				return func(c echo.Context) error {
+					collector = append(collector, "A")
+					return next(c)
+				}
+			},
+		},
 		ProductConfigs: map[string]dynamicGraphqlProxy.ProductConfig{
 			"myProduct.example.com": dynamicGraphqlProxy.ProductConfig{
 				Delinations: map[string]dynamicGraphqlProxy.Delineation{
@@ -140,12 +148,6 @@ func TestModules(t *testing.T) {
 						Schema:          schema,
 						DelineationType: dynamicGraphqlProxy.Graphql,
 						MiddlewareModules: []echo.MiddlewareFunc{
-							func(next echo.HandlerFunc) echo.HandlerFunc {
-								return func(c echo.Context) error {
-									collector = append(collector, "A")
-									return next(c)
-								}
-							},
 							func(next echo.HandlerFunc) echo.HandlerFunc {
 								return func(c echo.Context) error {
 									collector = append(collector, "B")
