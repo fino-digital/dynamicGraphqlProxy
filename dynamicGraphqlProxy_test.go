@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/TobiEiss/dynamicGraphqlProxy"
+	"github.com/fino-digital/dynamicGraphqlProxy"
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/graphql/testutil"
 	"github.com/labstack/echo"
