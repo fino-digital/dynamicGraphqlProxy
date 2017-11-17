@@ -29,7 +29,7 @@ func wrapSchema(delination Delineation, delinationKey string) echo.HandlerFunc {
 	case Rest:
 		return func(ctx echo.Context) error {
 			ctx.SetRequest(setEchoContext(ctx))
-			if regexp.MustCompile("^.*" + delinationKey + "/" + DocuRoute + "$").MatchString(ctx.Request().URL.Path) {
+			if regexp.MustCompile("^.*"+delinationKey+"/"+DocuRoute+"$").MatchString(ctx.Request().URL.Path) && ctx.Request().Method == echo.GET {
 				return schemaToRest.DeliverDocu(delination.Schema, ctx.Request().URL.RawPath)(ctx)
 			}
 			return schemaToRest.WrapSchema(delination.Schema)(ctx)

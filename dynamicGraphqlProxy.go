@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"regexp"
 
+	"github.com/fino-digital/schemaToRest"
 	"github.com/graphql-go/graphql"
 
 	"github.com/labstack/echo"
@@ -19,6 +20,7 @@ type Proxy struct {
 // NewProxy creates a new instance of Proxy
 func NewProxy() *Proxy {
 	proxy := Proxy{Echo: echo.New()}
+	proxy.Renderer = schemaToRest.GetTemplateRenderer()
 	return &proxy
 }
 

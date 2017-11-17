@@ -131,12 +131,21 @@ func TestProductConfig(t *testing.T) {
 		Route:        "/rest/dontExist",
 		ResponseCode: schemaToRest.HTTPStatusCantFindFunction,
 		Body:         "{}",
+	}, {
+		Host:         "myproduct-stageB.example.com",
+		Route:        "/rest/docu",
+		ResponseCode: http.StatusOK,
 	}}
 
 	for testIndex, test := range testData {
 		// build request
 		target := "http://" + test.Host + test.Route
-		request := httptest.NewRequest(echo.POST, target, strings.NewReader(test.Body))
+		var request *http.Request
+		if test.Body != "" {
+			request = httptest.NewRequest(echo.POST, target, strings.NewReader(test.Body))
+		} else {
+			request = httptest.NewRequest(echo.GET, target, nil)
+		}
 		rec := httptest.NewRecorder()
 
 		// TEST
