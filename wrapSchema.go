@@ -4,8 +4,9 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"regexp"
 
-	"github.com/TobiEiss/schemaToRest"
+	"github.com/fino-digital/schemaToRest"
 	"github.com/graphql-go/handler"
 	"github.com/labstack/echo"
 )
@@ -16,7 +17,10 @@ type ContextKey string
 // EchoContext is a key to get echoContext from request-context
 const EchoContext ContextKey = "echoContext"
 
-func wrapSchema(delination Delineation) echo.HandlerFunc {
+// DocuRoute the route to docu
+const DocuRoute = "docu"
+
+func wrapSchema(delination Delineation, delinationKey string) echo.HandlerFunc {
 	var setEchoContext = func(ctx echo.Context) *http.Request {
 		return ctx.Request().WithContext(context.WithValue(ctx.Request().Context(), EchoContext, ctx))
 	}
@@ -25,6 +29,9 @@ func wrapSchema(delination Delineation) echo.HandlerFunc {
 	case Rest:
 		return func(ctx echo.Context) error {
 			ctx.SetRequest(setEchoContext(ctx))
+			if regexp.MustCompile("^.*" + delinationKey + "/" + DocuRoute + "$").MatchString(ctx.Request().URL.Path) {
+				return schemaToRest.DeliverDocu(delination.Schema, ctx.Request().URL.RawPath)(ctx)
+			}
 			return schemaToRest.WrapSchema(delination.Schema)(ctx)
 		}
 	case Graphql:

@@ -1,7 +1,6 @@
 package dynamicGraphqlProxy_test
 
 import (
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -9,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/fino-digital/dynamicGraphqlProxy"
+	"github.com/fino-digital/schemaToRest"
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/graphql/testutil"
 	"github.com/labstack/echo"
@@ -22,7 +22,7 @@ func buildTestSchema() (*graphql.Schema, error) {
 				"testField": &graphql.Field{
 					Type: graphql.String,
 					Resolve: func(param graphql.ResolveParams) (interface{}, error) {
-						return "Hello", errors.New("Error")
+						return "Hello", nil
 					},
 				},
 			},
@@ -78,6 +78,10 @@ func TestProductConfig(t *testing.T) {
 						Schema:          schema,
 						DelineationType: dynamicGraphqlProxy.Graphql,
 					},
+					"rest": dynamicGraphqlProxy.Delineation{
+						Schema:          schema,
+						DelineationType: dynamicGraphqlProxy.Rest,
+					},
 				},
 			},
 		},
@@ -91,33 +95,48 @@ func TestProductConfig(t *testing.T) {
 		Host         string
 		Route        string
 		ResponseCode int
-		Stage        string
+		Body         string
 	}{{
 		Host:         "myproduct-stageA.example.com",
 		Route:        "/graphql/",
 		ResponseCode: http.StatusOK,
+		Body:         testutil.IntrospectionQuery,
 	}, {
 		Host:         "myproduct-stageB.example.com",
 		Route:        "/graphql/",
 		ResponseCode: http.StatusOK,
+		Body:         testutil.IntrospectionQuery,
 	}, {
 		Host:         "localhost:8080/local",
 		Route:        "/graphql/",
 		ResponseCode: http.StatusOK,
+		Body:         testutil.IntrospectionQuery,
 	}, {
 		Host:         "myproduct.example.com",
 		Route:        "/graphql/",
 		ResponseCode: http.StatusOK,
+		Body:         testutil.IntrospectionQuery,
 	}, {
 		Host:         "myproduct-wrongstage.example.com",
 		Route:        "/graphql/",
 		ResponseCode: http.StatusBadGateway,
+		Body:         testutil.IntrospectionQuery,
+	}, {
+		Host:         "myproduct-stageB.example.com",
+		Route:        "/rest/testField",
+		ResponseCode: http.StatusOK,
+		Body:         "{}",
+	}, {
+		Host:         "myproduct-stageB.example.com",
+		Route:        "/rest/dontExist",
+		ResponseCode: schemaToRest.HTTPStatusCantFindFunction,
+		Body:         "{}",
 	}}
 
 	for testIndex, test := range testData {
 		// build request
 		target := "http://" + test.Host + test.Route
-		request := httptest.NewRequest(echo.POST, target, strings.NewReader(testutil.IntrospectionQuery))
+		request := httptest.NewRequest(echo.POST, target, strings.NewReader(test.Body))
 		rec := httptest.NewRecorder()
 
 		// TEST

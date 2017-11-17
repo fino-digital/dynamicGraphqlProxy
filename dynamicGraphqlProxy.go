@@ -34,7 +34,7 @@ func (proxy *Proxy) UseProxy(config Config) {
 					var handler echo.HandlerFunc
 					handler = func(c echo.Context) error {
 						// serve product
-						if err := wrapSchema(delination)(context); err != nil {
+						if err := wrapSchema(delination, route)(context); err != nil {
 							return context.JSON(http.StatusInternalServerError, err)
 						}
 						return nil
@@ -64,7 +64,7 @@ func (proxy *Proxy) UseProxyWithLocalhost(config Config, productHost string) {
 				route := context.Param(ProxyParamType)
 				if delination, okD := productConfig.Delinations[route]; okD {
 					// serve product
-					if err := wrapSchema(delination)(context); err != nil {
+					if err := wrapSchema(delination, route)(context); err != nil {
 						return context.JSON(http.StatusInternalServerError, err)
 					}
 					return nil
